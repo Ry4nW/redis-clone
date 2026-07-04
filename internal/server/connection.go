@@ -1,4 +1,4 @@
-package main
+package server
 
 import (
 	"bufio"
@@ -8,33 +8,6 @@ import (
 	"net"
 	"strings"
 )
-
-func errPrint(err error) {
-	if err != nil {
-		log.Fatal("Error listening:", err)
-	}
-}
-
-func main() {
-
-	listener, err := net.Listen("tcp", ":8091")
-	if err != nil {
-		log.Fatal("Error listening:", err)
-	}
-
-	defer listener.Close()
-
-	for {
-
-		conn, err := listener.Accept()
-		if err != nil {
-			log.Println("Error accepting conn:", err)
-			continue
-		}
-
-		go handleConnection(conn)
-	}
-}
 
 func handleConnection(conn net.Conn) {
 	defer conn.Close()
@@ -56,7 +29,7 @@ func handleConnection(conn net.Conn) {
 		ackMsg := strings.TrimSpace(message)
 
 		fmt.Println(ackMsg)
-		if ackMsg == "EXIT" {
+		if ackMsg == "exit" {
 			return
 		}
 
