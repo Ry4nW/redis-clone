@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"strings"
@@ -48,6 +49,10 @@ func handleConnection(conn net.Conn) {
 
 	for {
 		message, err := reader.ReadString('\n')
+		if err == io.EOF {
+			return
+		}
+
 		ackMsg := strings.TrimSpace(message)
 
 		fmt.Println(ackMsg)
