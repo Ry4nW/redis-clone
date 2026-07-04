@@ -12,13 +12,16 @@ func Parse(reader *bufio.Reader) (*Request, error) {
 	}
 
 	tokens := strings.Fields(line)
-	command := tokens[0]
-	args := tokens[1:]
-
-	newReq := &Request{
-		Command: command,
-		Args: args,
+	if len(tokens) == 0 {
+		return nil, ErrEmptyRequest
 	}
 
-	return newReq, nil
+	// normalize cmd
+	command := strings.ToUpper(tokens[0])
+	args := tokens[1:]
+
+	return &Request{
+		Command: command,
+		Args:    args,
+	}, nil
 }
