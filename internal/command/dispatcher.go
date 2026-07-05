@@ -16,8 +16,24 @@ func Dispatch(req *resp.Request) (string, error) {
 }
 
 func HandlePing(req *resp.Request) (string, error) {
-	S
+	// 0 arg
+	lenArgs := len(req.Args)
+	if lenArgs == 0 {
+		return "PONG\n", nil
+	}
+
+	if lenArgs > 1 {
+		return "", ErrBadArgAmt
+	}
+
+	// 1 arg is echo
+	return HandleEcho(req)
 }
 
 func HandleEcho(req *resp.Request) (string, error) {
+	if lenArgs := len(req.Args); lenArgs > 1 || lenArgs == 0 {
+		return "", ErrBadArgAmt
+	}
+
+	return req.Args[0] + "\n", nil
 }

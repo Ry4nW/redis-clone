@@ -3,15 +3,22 @@ package server
 import (
 	"bufio"
 	"errors"
-	"fmt"
 	"io"
 	"log"
 	"net"
-	"strings"
 
 	"redis-clone/internal/command"
 	"redis-clone/internal/resp"
 )
+
+func Write(conn net.Conn, resp string) {
+	_, err := conn.Write([]byte(resp))
+	if err != nil {
+		log.Printf("Server write error: %v", err)
+	} else {
+		log.Printf("value written: %v", resp)
+	}
+}
 
 func handleConnection(conn net.Conn) {
 	defer conn.Close()
@@ -25,24 +32,20 @@ func handleConnection(conn net.Conn) {
 	reader := bufio.NewReader(conn)
 
 	for {
-		message, err := reader.ReadString('\n')
-		if err == io.EOF {
-			return
-		}
-
-		ackMsg := strings.TrimSpace(message)
 		request, err := resp.Parse(reader)
 
-		fmt.Println(ackMsg)
+		log.Printf("request made: %v", request)
+
 		if err != nil {
 			if errors.Is(err, io.EOF) {
 				// normal client disconnection
 				return
 			}
 
-			if errors.Is(err, resp.ErrMalformedRESP) {
+			if errors.Is(err, resp.ErrMalformedRESP) || errors.Is(err, resp.ErrEmptyRequest) {
 				// TODO: encode and send redis-specific erorr response
 				// send Redis protocol error
+				log.Printf("malformed resp")
 				continue
 			}
 			log.Printf("parse error: %v", err)
@@ -53,12 +56,8 @@ func handleConnection(conn net.Conn) {
 		if err != nil {
 			// convert to Redis error response
 			log.Printf("command error: %v", err)
-
+			continue
 		}
-
-		_, err = conn.Write([]byte(responseStr))
-		if err != nil {
-			log.Printf("Server write error: %v", err)
-		}
+		Write(conn, responseStr)
 	}
 }
