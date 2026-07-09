@@ -5,21 +5,16 @@ import (
 	"io"
 	"strconv"
 	"strings"
+	"unicode"
 )
 
-type Request struct {
-	Command string
-	Args    []string
-}
-
-type Data interface{}
-
-type BulkStr struct {
-	Data []byte
-}
-
-type Arr struct {
-	Data []Data
+func checkErr[T any](res T, err error) (T, error) {
+	// zero is zero-value of type T
+	var zero T
+	if err != nil {
+		return zero, err
+	}
+	return res, nil
 }
 
 func Parse(reader *bufio.Reader) (Data, error) {
@@ -30,9 +25,20 @@ func Parse(reader *bufio.Reader) (Data, error) {
 
 	switch line[0] {
 	case '$':
-		parseBulkStr(line, reader)
+		res, err := parseBulkStr(line, reader)
+		return checkErr(res, err)
 	case '*':
-		parseArray(line, reader)
+		res, err := parseArray(line, reader)
+		return checkErr(res, err)
+	case '-':
+		res, err := parseError(line, reader)
+		return checkErr(res, err)
+	case ':':
+		res, err := parseInt(line, reader)
+		return checkErr(res, err)
+	case '+':
+		res, err := parseSimpleStr(line, reader)
+		return checkErr(res, err)
 	default:
 		return nil, ErrMalformedRESP
 	}
@@ -56,9 +62,13 @@ func parseBulkStr(line string, reader *bufio.Reader) (*BulkStr, error) {
 	}, nil
 }
 
+func removeCharPrefixAndCRLF(str string) string {
+	return strings.TrimSuffix(str, "\r\n")[1:]
+}
+
 func parseArray(line string, reader *bufio.Reader) (*Arr, error) {
 	// *<number-of-elements>\r\n<element-1>...<element-n>
-	lengthStr := strings.TrimSuffix(line, "\r\n")[1:]
+	lengthStr := removeCharPrefixAndCRLF(line)
 	arrLen, err := strconv.Atoi(lengthStr)
 
 	if err != nil {
@@ -83,7 +93,33 @@ func parseArray(line string, reader *bufio.Reader) (*Arr, error) {
 	return &Arr{
 		Data: result,
 	}, nil
+}
 
+func parseError(line string, reader *bufio.Reader) (*RESPError, error) {
+	errorStr := removeCharPrefixAndCRLF(line)
+	firstSpaceIdx := strings.Index(errorStr, " ")
+	errorType := errorStr[:firstSpaceIdx]
+	errorMsg := errorStr[firstSpaceIdx+1:]
+
+	return &RESPError{
+		Prefix: errorType,
+		Message: errorMsg,
+	}, nil
+}
+
+func parseInt(line string, reader *bufio.Reader) (string, error) {
+	intStr := removeCharPrefixAndCRLF(line)
+	for _, c := range intStr {
+		if !unicode.IsDigit(rune(c)) {
+			return "", ErrTypeIsNotInt
+		}
+	}
+	return intStr, nil
+}
+
+func parseSimpleStr(line string, reader *bufio.Reader) (string, error) {
+	simpleStr := removeCharPrefixAndCRLF(line)
+	return simpleStr, nil
 }
 
 func getLenHelper(line string) (int, error) {
