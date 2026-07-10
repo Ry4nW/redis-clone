@@ -1,55 +1,43 @@
 package resp
 
 import (
-	"bufio"
 	"io"
+	"bufio"
 	"strconv"
 	"strings"
-	"unicode"
 )
 
-func checkErr[T any](res T, err error) (T, error) {
-	// zero is zero-value of type T
-	var zero T
-	if err != nil {
-		return zero, err
-	}
-	return res, nil
-}
-
-func Parse(reader *bufio.Reader) (Data, error) {
+func Parse(reader *bufio.Reader) (RespValue, error) {
 	line, err := reader.ReadString('\n')
 	if err != nil {
-		return nil, err
+		return RespValue{}, err
 	}
 
 	switch line[0] {
 	case '$':
-		res, err := parseBulkStr(line, reader)
-		return checkErr(res, err)
+		return parseBulkStr(line, reader)
 	case '*':
-		res, err := parseArray(line, reader)
-		return checkErr(res, err)
+		return parseArray(line, reader)
 	case '-':
-		res, err := parseError(line, reader)
-		return checkErr(res, err)
+		return parseError(line, reader)
 	case ':':
-		res, err := parseInt(line, reader)
-		return checkErr(res, err)
+		return parseInt(line, reader)
 	case '+':
-		res, err := parseSimpleStr(line, reader)
-		return checkErr(res, err)
+		return parseSimpleStr(line, reader)
 	default:
-		return nil, ErrMalformedRESP
+		return RespValue{}, ErrMalformedRESP
 	}
 }
 
-func parseBulkStr(line string, reader *bufio.Reader) (*BulkStr, error) {
+func parseBulkStr(line string, reader *bufio.Reader) (RespValue, error) {
 	// $<length>\r\n<data>\r\n
 	strLen, err := getLenHelper(line)
-
 	if err != nil {
-		return nil, err
+		return RespValue{}, err
+	}
+
+	if strLen < 0 {
+		return NewNullBulkString(), nil
 	}
 
 	data := make([]byte, strLen)
@@ -57,69 +45,60 @@ func parseBulkStr(line string, reader *bufio.Reader) (*BulkStr, error) {
 	crlf := make([]byte, 2)
 	io.ReadFull(reader, crlf)
 
-	return &BulkStr{
-		Data: data,
-	}, nil
+	return NewBulkString(string(data)), nil
 }
 
 func removeCharPrefixAndCRLF(str string) string {
 	return strings.TrimSuffix(str, "\r\n")[1:]
 }
 
-func parseArray(line string, reader *bufio.Reader) (*Arr, error) {
+func parseArray(line string, reader *bufio.Reader) (RespValue, error) {
 	// *<number-of-elements>\r\n<element-1>...<element-n>
 	lengthStr := removeCharPrefixAndCRLF(line)
 	arrLen, err := strconv.Atoi(lengthStr)
-
 	if err != nil {
-		return nil, err
+		return RespValue{}, err
 	}
 
-	// garbage buffer for crlfs
-	crlfGarb := make([]byte, 2)
-	result := make([]Data, arrLen)
-	// each arr el has its own crlf
+	if arrLen < 0 {
+		return NewNullArr(), nil
+	}
+
+	result := make([]RespValue, arrLen)
 	for i := 0; i < arrLen; i++ {
-		// *3\r\n :1\r\n :2\r\n:3\r\n
+		// mutually recursive call on array element; each element parser
+		// already consumes its own trailing CRLF
 		curData, err := Parse(reader)
 		if err != nil {
-			return nil, err
+			return RespValue{}, err
 		}
 
-		result[0] = curData
-		io.ReadFull(reader, crlfGarb)
+		result[i] = curData
 	}
 
-	return &Arr{
-		Data: result,
+	return RespValue{
+		Type:  Array,
+		Array: result,
 	}, nil
 }
 
-func parseError(line string, reader *bufio.Reader) (*RESPError, error) {
+func parseError(line string, reader *bufio.Reader) (RespValue, error) {
 	errorStr := removeCharPrefixAndCRLF(line)
-	firstSpaceIdx := strings.Index(errorStr, " ")
-	errorType := errorStr[:firstSpaceIdx]
-	errorMsg := errorStr[firstSpaceIdx+1:]
-
-	return &RESPError{
-		Prefix: errorType,
-		Message: errorMsg,
-	}, nil
+	return NewError(errorStr), nil
 }
 
-func parseInt(line string, reader *bufio.Reader) (string, error) {
+func parseInt(line string, reader *bufio.Reader) (RespValue, error) {
 	intStr := removeCharPrefixAndCRLF(line)
-	for _, c := range intStr {
-		if !unicode.IsDigit(rune(c)) {
-			return "", ErrTypeIsNotInt
-		}
+	i, err := strconv.ParseInt(intStr, 10, 64)
+	if err != nil {
+		return RespValue{}, ErrTypeIsNotInt
 	}
-	return intStr, nil
+	return NewInteger(i), nil
 }
 
-func parseSimpleStr(line string, reader *bufio.Reader) (string, error) {
+func parseSimpleStr(line string, reader *bufio.Reader) (RespValue, error) {
 	simpleStr := removeCharPrefixAndCRLF(line)
-	return simpleStr, nil
+	return NewSimpleString(simpleStr), nil
 }
 
 func getLenHelper(line string) (int, error) {
