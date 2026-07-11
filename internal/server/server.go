@@ -1,16 +1,20 @@
 package server
 
 import (
+	"fmt"
 	"log"
 	"net"
+
+	"redis-clone/internal/command"
 )
 
 type Server struct {
-	addr string
+	addr     string
+	handlers *command.Handlers
 }
 
-func New(addr string) *Server {
-	return &Server{addr: addr}
+func New(addr string, handlers *command.Handlers) *Server {
+	return &Server{addr: addr, handlers: handlers}
 }
 
 func (s *Server) Start() {
@@ -21,11 +25,13 @@ func (s *Server) Start() {
 	defer listener.Close()
 
 	for {
+		fmt.Println("")
 		conn, err := listener.Accept()
 		if err != nil {
 			log.Println("Error accepting conn:", err)
 			continue
 		}
-		go handleConnection(conn)
+		fmt.Println("goroutine started")
+		go s.handleConnection(conn)
 	}
 }

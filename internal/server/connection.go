@@ -7,7 +7,6 @@ import (
 	"log"
 	"net"
 
-	"redis-clone/internal/command"
 	"redis-clone/internal/resp"
 )
 
@@ -20,7 +19,7 @@ func Write(conn net.Conn, resp string) {
 	}
 }
 
-func handleConnection(conn net.Conn) {
+func (s *Server) handleConnection(conn net.Conn) {
 	defer conn.Close()
 
 	exitMsg := "write 'exit' to exit\n"
@@ -32,7 +31,7 @@ func handleConnection(conn net.Conn) {
 	reader := bufio.NewReader(conn)
 
 	for {
-		request, err := resp.Parse(reader)
+		request, err := resp.ParseSimple(reader)
 
 		log.Printf("request made: %v", request)
 
@@ -52,7 +51,7 @@ func handleConnection(conn net.Conn) {
 			return
 		}
 
-		responseStr, err := command.Dispatch(request)
+		responseStr, err := s.handlers.Dispatch(request)
 		if err != nil {
 			// convert to Redis error response
 			log.Printf("command error: %v", err)
