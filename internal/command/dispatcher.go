@@ -1,7 +1,6 @@
 package command
 
 import (
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -25,7 +24,17 @@ func getNowMS() int64 {
 	return time.Now().UnixMilli()
 }
 
+// Dispatch encodes the result (or error) to wire-ready RESP bytes, so callers
+// can always write what comes back straight to the socket.
 func (h *Handlers) Dispatch(req *resp.Request) (string, error) {
+	result, err := h.route(req)
+	if err != nil {
+		return resp.Encode(resp.NewError(err.Error())), err
+	}
+	return resp.Encode(result), nil
+}
+
+func (h *Handlers) route(req *resp.Request) (resp.RespValue, error) {
 	switch strings.ToUpper(req.Command) {
 	case "PING":
 		return h.handlePing(req)
@@ -42,7 +51,7 @@ func (h *Handlers) Dispatch(req *resp.Request) (string, error) {
 	case "FLUSH":
 		return h.handleFlush(req)
 	default:
-		return "", ErrUnknownCommand
+		return resp.RespValue{}, ErrUnknownCommand
 	}
 }
 
@@ -50,25 +59,25 @@ func isValidArgLen(req *resp.Request, expectLen int) bool {
 	return len(req.Args) == expectLen
 }
 
-func (h *Handlers) handlePing(req *resp.Request) (string, error) {
+func (h *Handlers) handlePing(req *resp.Request) (resp.RespValue, error) {
 	if len(req.Args) == 0 {
-		return "PONG\n", nil
+		return resp.NewSimpleString("PONG"), nil
 	}
 
 	return h.handleEcho(req)
 }
 
-func (h *Handlers) handleEcho(req *resp.Request) (string, error) {
+func (h *Handlers) handleEcho(req *resp.Request) (resp.RespValue, error) {
 	if !isValidArgLen(req, 1) {
-		return "", ErrBadArgAmt
+		return resp.RespValue{}, ErrBadArgAmt
 	}
 
-	return req.Args[0] + "\n", nil
+	return resp.NewBulkString(req.Args[0]), nil
 }
 
-func (h *Handlers) handleGet(req *resp.Request) (string, error) {
+func (h *Handlers) handleGet(req *resp.Request) (resp.RespValue, error) {
 	if !isValidArgLen(req, 1) {
-		return "", ErrBadArgAmt
+		return resp.RespValue{}, ErrBadArgAmt
 	}
 
 	key := req.Args[0]
@@ -78,20 +87,20 @@ func (h *Handlers) handleGet(req *resp.Request) (string, error) {
 
 	entry, ok := h.store[key]
 	if !ok {
-		return "(nil)\n", nil
+		return resp.NewNullBulkString(), nil
 	}
 
 	if entry.ExpiresAt != 0 && entry.ExpiresAt <= getNowMS() {
 		delete(h.store, key)
-		return "(nil)\n", nil
+		return resp.NewNullBulkString(), nil
 	}
 
-	return entry.String + "\n", nil
+	return entry, nil
 }
 
-func (h *Handlers) handleSet(req *resp.Request) (string, error) {
+func (h *Handlers) handleSet(req *resp.Request) (resp.RespValue, error) {
 	if !isValidArgLen(req, 2) {
-		return "", ErrBadArgAmt
+		return resp.RespValue{}, ErrBadArgAmt
 	}
 
 	key, val := req.Args[0], req.Args[1]
@@ -102,12 +111,12 @@ func (h *Handlers) handleSet(req *resp.Request) (string, error) {
 	// TODO: impl PX, EX options
 	h.store[key] = resp.NewBulkString(val)
 
-	return "OK\n", nil
+	return resp.NewSimpleString("OK"), nil
 }
 
-func (h *Handlers) handleExists(req *resp.Request) (string, error) {
+func (h *Handlers) handleExists(req *resp.Request) (resp.RespValue, error) {
 	if !isValidArgLen(req, 1) {
-		return "", ErrBadArgAmt
+		return resp.RespValue{}, ErrBadArgAmt
 	}
 
 	key := req.Args[0]
@@ -117,18 +126,18 @@ func (h *Handlers) handleExists(req *resp.Request) (string, error) {
 
 	entry, ok := h.store[key]
 	if !ok {
-		return "0\n", nil
+		return resp.NewInteger(0), nil
 	}
 
 	if entry.ExpiresAt != 0 && entry.ExpiresAt <= getNowMS() {
 		delete(h.store, key)
-		return "0\n", nil
+		return resp.NewInteger(0), nil
 	}
 
-	return "1\n", nil
+	return resp.NewInteger(1), nil
 }
 
-func (h *Handlers) handleDel(req *resp.Request) (string, error) {
+func (h *Handlers) handleDel(req *resp.Request) (resp.RespValue, error) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
@@ -139,13 +148,13 @@ func (h *Handlers) handleDel(req *resp.Request) (string, error) {
 			deleteCount++
 		}
 	}
-	return strconv.Itoa(deleteCount) + "\n", nil
+	return resp.NewInteger(int64(deleteCount)), nil
 }
 
-func (h *Handlers) handleFlush(req *resp.Request) (string, error) {
+func (h *Handlers) handleFlush(req *resp.Request) (resp.RespValue, error) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
 	h.store = Store{}
-	return "OK\n", nil
+	return resp.NewSimpleString("OK"), nil
 }

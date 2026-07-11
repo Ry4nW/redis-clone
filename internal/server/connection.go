@@ -42,9 +42,7 @@ func (s *Server) handleConnection(conn net.Conn) {
 			}
 
 			if errors.Is(err, resp.ErrMalformedRESP) || errors.Is(err, resp.ErrEmptyRequest) {
-				// TODO: encode and send redis-specific erorr response
-				// send Redis protocol error
-				log.Printf("malformed resp")
+				Write(conn, resp.Encode(resp.NewError(err.Error())))
 				continue
 			}
 			log.Printf("parse error: %v", err)
@@ -53,9 +51,7 @@ func (s *Server) handleConnection(conn net.Conn) {
 
 		responseStr, err := s.handlers.Dispatch(request)
 		if err != nil {
-			// convert to Redis error response
 			log.Printf("command error: %v", err)
-			continue
 		}
 		Write(conn, responseStr)
 	}
