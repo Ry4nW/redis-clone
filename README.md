@@ -31,6 +31,8 @@ bar
 
 ## Connect with redis-cli
 
+Connect to the server using the official Redis CLI.
+
 ```
 ➜  redis-clone git:(main) ✗ redis-cli -p 8091
 127.0.0.1:8091> SET hi "ryan"
