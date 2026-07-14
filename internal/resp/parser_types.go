@@ -22,6 +22,9 @@ type RespValue struct {
 	Integer int64
 	Array   []RespValue
 
+	// expiry for TTL
+	ExpiresAt int64
+
 	// only true if BulkString or Array is null
 	Null bool
 }
@@ -57,6 +60,13 @@ func NewInteger(i int64) RespValue {
 func NewNullBulkString() RespValue {
 	return RespValue{
 		Type: BulkString,
+		Null: true,
+	}
+}
+
+func NewNullArr() RespValue {
+	return RespValue{
+		Type: Array,
 		Null: true,
 	}
 }
