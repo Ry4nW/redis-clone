@@ -202,3 +202,83 @@ func TestParseRESP_MalformedUnknownType(t *testing.T) {
 		t.Fatalf("expected ErrMalformedRESP, got %v", err)
 	}
 }
+
+// --- ReadRequest (protocol auto-detection) ---
+
+func TestReadRequest_InlineFallsBackToParseSimple(t *testing.T) {
+	req, err := ReadRequest(newReader("SET foo bar\n"))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if req.Command != "SET" || len(req.Args) != 2 || req.Args[0] != "foo" || req.Args[1] != "bar" {
+		t.Fatalf("unexpected request: %+v", req)
+	}
+}
+
+func TestReadRequest_ArrayPingNoArgs(t *testing.T) {
+	req, err := ReadRequest(newReader("*1\r\n$4\r\nPING\r\n"))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if req.Command != "PING" || len(req.Args) != 0 {
+		t.Fatalf("unexpected request: %+v", req)
+	}
+}
+
+func TestReadRequest_ArrayEchoWithArg(t *testing.T) {
+	req, err := ReadRequest(newReader("*2\r\n$4\r\nECHO\r\n$5\r\nhello\r\n"))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if req.Command != "ECHO" || len(req.Args) != 1 || req.Args[0] != "hello" {
+		t.Fatalf("unexpected request: %+v", req)
+	}
+}
+
+func TestReadRequest_ArraySetKeyValue(t *testing.T) {
+	req, err := ReadRequest(newReader("*3\r\n$3\r\nSET\r\n$3\r\nfoo\r\n$3\r\nbar\r\n"))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if req.Command != "SET" || len(req.Args) != 2 || req.Args[0] != "foo" || req.Args[1] != "bar" {
+		t.Fatalf("unexpected request: %+v", req)
+	}
+}
+
+func TestReadRequest_ArrayCommandNormalization(t *testing.T) {
+	req, err := ReadRequest(newReader("*1\r\n$4\r\nping\r\n"))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if req.Command != "PING" {
+		t.Fatalf("expected normalized Command PING, got %q", req.Command)
+	}
+}
+
+func TestReadRequest_EmptyArray(t *testing.T) {
+	_, err := ReadRequest(newReader("*0\r\n"))
+	if err != ErrEmptyRequest {
+		t.Fatalf("expected ErrEmptyRequest, got %v", err)
+	}
+}
+
+func TestReadRequest_NullArray(t *testing.T) {
+	_, err := ReadRequest(newReader("*-1\r\n"))
+	if err != ErrEmptyRequest {
+		t.Fatalf("expected ErrEmptyRequest, got %v", err)
+	}
+}
+
+func TestReadRequest_NonBulkStringElement(t *testing.T) {
+	_, err := ReadRequest(newReader("*1\r\n:5\r\n"))
+	if err != ErrMalformedRESP {
+		t.Fatalf("expected ErrMalformedRESP, got %v", err)
+	}
+}
+
+func TestReadRequest_EOF(t *testing.T) {
+	_, err := ReadRequest(newReader(""))
+	if err != io.EOF {
+		t.Fatalf("expected io.EOF, got %v", err)
+	}
+}
