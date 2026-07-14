@@ -134,3 +134,46 @@ func ParseSimple(reader *bufio.Reader) (*Request, error) {
 		Args:    args,
 	}, nil
 }
+
+// * is RESP, anythign else is inline text protocol
+func ReadRequest(reader *bufio.Reader) (*Request, error) {
+	b, err := reader.Peek(1)
+	if err != nil {
+		return nil, err
+	}
+
+	if b[0] != '*' {
+		return ParseSimple(reader)
+	}
+
+	v, err := Parse(reader)
+	if err != nil {
+		return nil, err
+	}
+
+	return requestFromArray(v)
+}
+
+// requestFromArray converts a parsed RESP array into a Request
+// requirement: every element of the array must be a bulk string.
+func requestFromArray(v RespValue) (*Request, error) {
+	if v.Null || len(v.Array) == 0 {
+		return nil, ErrEmptyRequest
+	}
+
+	for _, elem := range v.Array {
+		if elem.Type != BulkString || elem.Null {
+			return nil, ErrMalformedRESP
+		}
+	}
+
+	args := make([]string, len(v.Array)-1)
+	for i, elem := range v.Array[1:] {
+		args[i] = elem.String
+	}
+
+	return &Request{
+		Command: strings.ToUpper(v.Array[0].String),
+		Args:    args,
+	}, nil
+}

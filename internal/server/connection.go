@@ -22,16 +22,10 @@ func Write(conn net.Conn, resp string) {
 func (s *Server) handleConnection(conn net.Conn) {
 	defer conn.Close()
 
-	exitMsg := "write 'exit' to exit\n"
-	_, err := conn.Write([]byte(exitMsg))
-	if err != nil {
-		log.Printf("Server write error: %v", err)
-	}
-
 	reader := bufio.NewReader(conn)
 
 	for {
-		request, err := resp.ParseSimple(reader)
+		request, err := resp.ReadRequest(reader)
 
 		log.Printf("request made: %v", request)
 
@@ -41,7 +35,7 @@ func (s *Server) handleConnection(conn net.Conn) {
 				return
 			}
 
-			if errors.Is(err, resp.ErrMalformedRESP) || errors.Is(err, resp.ErrEmptyRequest) {
+			if errors.Is(err, resp.ErrMalformedRESP) || errors.Is(err, resp.ErrEmptyRequest) || errors.Is(err, resp.ErrTypeIsNotInt) {
 				Write(conn, resp.Encode(resp.NewError(err.Error())))
 				continue
 			}
