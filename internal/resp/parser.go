@@ -1,8 +1,8 @@
 package resp
 
 import (
-	"io"
 	"bufio"
+	"io"
 	"strconv"
 	"strings"
 )
@@ -33,7 +33,7 @@ func parseBulkStr(line string, reader *bufio.Reader) (RespValue, error) {
 	// $<length>\r\n<data>\r\n
 	strLen, err := getLenHelper(line)
 	if err != nil {
-		return RespValue{}, err
+		return RespValue{}, ErrMalformedRESP
 	}
 
 	if strLen < 0 {
@@ -41,9 +41,13 @@ func parseBulkStr(line string, reader *bufio.Reader) (RespValue, error) {
 	}
 
 	data := make([]byte, strLen)
-	io.ReadFull(reader, data)
+	if _, err := io.ReadFull(reader, data); err != nil {
+		return RespValue{}, ErrUnexpectedEOF
+	}
 	crlf := make([]byte, 2)
-	io.ReadFull(reader, crlf)
+	if _, err := io.ReadFull(reader, crlf); err != nil {
+		return RespValue{}, ErrUnexpectedEOF
+	}
 
 	return NewBulkString(string(data)), nil
 }
@@ -57,7 +61,7 @@ func parseArray(line string, reader *bufio.Reader) (RespValue, error) {
 	lengthStr := removeCharPrefixAndCRLF(line)
 	arrLen, err := strconv.Atoi(lengthStr)
 	if err != nil {
-		return RespValue{}, err
+		return RespValue{}, ErrMalformedRESP
 	}
 
 	if arrLen < 0 {
