@@ -1,4 +1,4 @@
-# redis-clone
+# redis-server
 
 A Redis server clone written in Go from scratch, no external dependencies.
 Implements a raw TCP server, a wire protocol parser, and a command
