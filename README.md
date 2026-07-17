@@ -88,6 +88,24 @@ go test ./internal/command -run TestHandleSetGet_RoundTrip -v
 - `internal/server` - accepts connections, one goroutine per connection,
   each reading a request, dispatching it, and writing the response back.
 
+## TODO 
+1. AOF persistence
+   1. append every write command to log on disk
+   2. write, fsync
+   3. replay aof commands on startup
+   4. configurable policies 
+      1. always: log after every write
+      2. everysec: once per sec
+2. impl PX, EX options in SET
+3. benchmark
+   1. test diff policies and scenarios for aof, tradeoffs and optimizations
+   2. profiling
+   3. pipeline support
+4. testing
+   1. concurrent stress tests
+   2. race tests
+
+
 ## License
 
 GPLv3, see LICENSE.
