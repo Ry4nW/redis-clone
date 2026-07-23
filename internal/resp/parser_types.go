@@ -3,6 +3,7 @@ package resp
 type Request struct {
 	Command string
 	Args    []string
+	Mutates bool
 }
 
 type RespType int

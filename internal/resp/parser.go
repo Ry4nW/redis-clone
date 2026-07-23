@@ -114,6 +114,27 @@ func getLenHelper(line string) (int, error) {
 	return strLen, nil
 }
 
+func doesMutate(cmd string) (bool, error) {
+	switch strings.ToUpper(cmd) {
+	case "PING":
+		return false, nil
+	case "ECHO":
+		return false, nil
+	case "GET":
+		return false, nil
+	case "SET":
+		return true, nil
+	case "EXISTS":
+		return false, nil
+	case "DEL":
+		return true, nil
+	case "FLUSH":
+		return true, nil
+	default:
+		return false, ErrUnknownCommand
+	}
+}
+
 func ParseSimple(reader *bufio.Reader) (*Request, error) {
 	line, err := reader.ReadString('\n')
 	if err != nil {
@@ -129,9 +150,14 @@ func ParseSimple(reader *bufio.Reader) (*Request, error) {
 	command := strings.ToUpper(tokens[0])
 	args := tokens[1:]
 
+	mutate, err := doesMutate(command)
+	if err != nil {
+		return nil, err
+	}
 	return &Request{
 		Command: command,
 		Args:    args,
+		Mutates: mutate,
 	}, nil
 }
 
@@ -172,8 +198,14 @@ func requestFromArray(v RespValue) (*Request, error) {
 		args[i] = elem.String
 	}
 
+	cmd := strings.ToUpper(v.Array[0].String)
+	mutate, err := doesMutate(cmd)
+	if err != nil {
+		return nil, err
+	}
 	return &Request{
-		Command: strings.ToUpper(v.Array[0].String),
+		Command: cmd,
 		Args:    args,
+		Mutates: mutate,
 	}, nil
 }
