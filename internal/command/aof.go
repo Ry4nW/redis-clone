@@ -65,7 +65,7 @@ func (a *AOF) AppendRequest(req resp.Request) {
 	argBulkStrs[0] = resp.NewBulkString(cmd)
 
 	for i, arg := range args {
-		argBulkStrs[i] = resp.NewBulkString(arg)
+		argBulkStrs[i+1] = resp.NewBulkString(arg)
 	}
 	newRV := resp.RespValue{
 		Type:  resp.Array,
@@ -83,11 +83,13 @@ func (a *AOF) Rewrite(handler *Handlers) error {
 	// define rewrite mechanisms
 
 	// temp for new cmds
-	f, err := os.Create("appendonly.aof.temp")
+	f, err := os.Create("appendonly.aof.tmp")
 	if err != nil {
 		return err
 	}
-	defer f.Close()
+
+	// write compacted commands to the temp file, not a.file (the old log)
+	tempAOF := &AOF{file: f, policy: a.policy}
 
 	handler.mu.RLock()
 	for k, v := range handler.store {
@@ -95,10 +97,26 @@ func (a *AOF) Rewrite(handler *Handlers) error {
 			Command: "SET",
 			Args:    []string{k, v.String},
 		}
-		a.AppendRequest(newReq)
+		tempAOF.AppendRequest(newReq)
 	}
 	handler.mu.RUnlock()
 
-	os.Rename("appendonly.aof.tmp", "appendonly.aof")
+	if err := f.Sync(); err != nil {
+		f.Close()
+		return err
+	}
+	f.Close()
+
+	if err := os.Rename("appendonly.aof.tmp", "appendonly.aof"); err != nil {
+		return err
+	}
+
+	a.file.Close()
+	newFile, err := os.OpenFile("appendonly.aof", os.O_APPEND|os.O_RDWR, 0644)
+	if err != nil {
+		return err
+	}
+	a.file = newFile
+
 	return nil
 }
