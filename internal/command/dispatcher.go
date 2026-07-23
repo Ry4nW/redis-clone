@@ -13,10 +13,17 @@ type Store map[string]resp.RespValue
 type Handlers struct {
 	mu    sync.RWMutex
 	store Store
+	aof   *AOF
 }
 
+// no AOF persistence, e.g. for tests
 func NewHandlers() *Handlers {
 	return &Handlers{store: Store{}}
+}
+
+// logs mutating commands to aof
+func NewHandlersWithAOF(aof *AOF) *Handlers {
+	return &Handlers{store: Store{}, aof: aof}
 }
 
 // handling for expiry
@@ -34,7 +41,7 @@ func (h *Handlers) Dispatch(req *resp.Request) (string, error) {
 	return resp.Encode(result), nil
 }
 
-func (h *Handlers) route(req *resp.Request) (resp.RespValue, error) {
+func (h *Handlers) execute(req *resp.Request) (resp.RespValue, error) {
 	switch strings.ToUpper(req.Command) {
 	case "PING":
 		return h.handlePing(req)
@@ -53,6 +60,21 @@ func (h *Handlers) route(req *resp.Request) (resp.RespValue, error) {
 	default:
 		return resp.RespValue{}, ErrUnknownCommand
 	}
+}
+
+// operate aof if cmd completed
+func (h *Handlers) route(req *resp.Request) (resp.RespValue, error) {
+	resp, err := h.execute(req)
+	if err != nil {
+		return resp, err
+	}
+
+	if req.Mutates && h.aof != nil {
+		if aofErr := h.aof.AppendRequest(*req); aofErr != nil {
+			return resp, aofErr
+		}
+	}
+	return resp, nil
 }
 
 func isValidArgLen(req *resp.Request, expectLen int) bool {

@@ -1,6 +1,9 @@
 package command
 
 import (
+	"bufio"
+	"errors"
+	"io"
 	"os"
 	"redis-clone/internal/resp"
 )
@@ -58,7 +61,7 @@ func (a *AOF) Clear() error {
 }
 
 // converts resp req to parts to be translated, then written in resp
-func (a *AOF) AppendRequest(req resp.Request) {
+func (a *AOF) AppendRequest(req resp.Request) error {
 	cmd, args := req.Command, req.Args
 	// args are arbitrary bytes
 	argBulkStrs := make([]resp.RespValue, len(args)+1)
@@ -74,7 +77,33 @@ func (a *AOF) AppendRequest(req resp.Request) {
 
 	encoded := resp.Encode(newRV)
 
-	a.Append([]byte(encoded))
+	return a.Append([]byte(encoded))
+}
+
+// replays the log into handler's store, e.g. on startup
+func (a *AOF) Load(handler *Handlers) error {
+	if _, err := a.file.Seek(0, io.SeekStart); err != nil {
+		return err
+	}
+
+	reader := bufio.NewReader(a.file)
+	for {
+		req, err := resp.ReadRequest(reader)
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				break
+			}
+			return err
+		}
+
+		// execute, not route -- don't re-append what we just read
+		if _, err := handler.execute(req); err != nil {
+			return err
+		}
+	}
+
+	_, err := a.file.Seek(0, io.SeekEnd)
+	return err
 }
 
 // performs aof compaction i.e. writes a SET for each kv pair,
@@ -88,18 +117,26 @@ func (a *AOF) Rewrite(handler *Handlers) error {
 		return err
 	}
 
-	// write compacted commands to the temp file, not a.file (the old log)
+	// write to the temp file, not a.file (the old log)
 	tempAOF := &AOF{file: f, policy: a.policy}
 
 	handler.mu.RLock()
+	var writeErr error
 	for k, v := range handler.store {
 		newReq := resp.Request{
 			Command: "SET",
 			Args:    []string{k, v.String},
 		}
-		tempAOF.AppendRequest(newReq)
+		if writeErr = tempAOF.AppendRequest(newReq); writeErr != nil {
+			break
+		}
 	}
 	handler.mu.RUnlock()
+
+	if writeErr != nil {
+		f.Close()
+		return writeErr
+	}
 
 	if err := f.Sync(); err != nil {
 		f.Close()
