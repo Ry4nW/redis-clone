@@ -5,6 +5,31 @@ import (
 	"strings"
 )
 
+func EncodeSimple(v RespValue) any {
+	switch v.Type {
+	case SimpleString:
+		return v.String
+	case Error:
+		return v.String
+	case Integer:
+		return v.Integer
+	case BulkString:
+		return v.String
+	case Array:
+		if v.Null {
+			return "*-1\r\n"
+		}
+		var b strings.Builder
+		b.WriteString("*" + strconv.Itoa(len(v.Array)) + "\r\n")
+		for _, elem := range v.Array {
+			b.WriteString(Encode(elem))
+		}
+		return b.String()
+	default:
+		return ""
+	}
+}
+
 func Encode(v RespValue) string {
 	switch v.Type {
 	case SimpleString:
