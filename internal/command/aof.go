@@ -89,6 +89,7 @@ func (a *AOF) Rewrite(handler *Handlers) error {
 	}
 	defer f.Close()
 
+	handler.mu.RLock()
 	for k, v := range handler.store {
 		newReq := resp.Request{
 			Command: "SET",
@@ -96,6 +97,8 @@ func (a *AOF) Rewrite(handler *Handlers) error {
 		}
 		a.AppendRequest(newReq)
 	}
+	handler.mu.RUnlock()
+
 	os.Rename("appendonly.aof.tmp", "appendonly.aof")
 	return nil
 }
